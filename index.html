@@ -168,6 +168,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
   border-radius:50%;background:var(--water);border:2px solid var(--bg);cursor:pointer}
 input[type=range]::-moz-range-thumb{width:17px;height:17px;border-radius:50%;
   background:var(--water);border:2px solid var(--bg);cursor:pointer}
+/* the heat-dome control wears the chiller red — it is a stress assumption, not a comfort setting */
+#hdrrow label{color:var(--chiller);font-weight:600}
+#hdrrow .val{color:var(--chiller);border-color:var(--chiller)}
+#hdrrow input[type=range]::-webkit-slider-thumb{background:var(--chiller)}
+#hdrrow input[type=range]::-moz-range-thumb{background:var(--chiller)}
 .wizbar{display:flex;justify-content:space-between;align-items:center;gap:14px;
   margin-top:26px;padding-top:18px;border-top:1px solid var(--line)}
 .btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;
@@ -367,8 +372,8 @@ input[type=range]::-moz-range-thumb{width:17px;height:17px;border-radius:50%;
           <div class="hint">Anything from a 1 MW edge room to a 200 MW campus.</div>
         </div>
         <div class="sl">
-          <label>Heat captured to the water loop <span class="val" id="v_hc">95%</span></label>
-          <input type="range" id="i_hc" min="60" max="100" step="1" value="95">
+          <label>Heat captured to the water loop <span class="val" id="v_hc">100%</span></label>
+          <input type="range" id="i_hc" min="60" max="100" step="1" value="100">
           <div class="hint">Direct-to-chip / liquid-cooled racks typically land at 85–95%. The remainder is
             picked up by room air and is not modelled as loop heat.</div>
         </div>
@@ -500,7 +505,7 @@ input[type=range]::-moz-range-thumb{width:17px;height:17px;border-radius:50%;
         </div>
       </div>
       <div class="slrow">
-        <div class="sl">
+        <div class="sl" id="hdrrow">
           <label>Heat dome recirculation effect <span class="val" id="v_hdr">+0.0 K</span></label>
           <input type="range" id="i_hdr" min="0" max="20" step="0.5" value="0">
           <div class="hint">On the 2nd–5th day of a heat wave the condensers stop seeing the weather station's
@@ -1058,7 +1063,8 @@ function designN(key,N){         // hottest day in the most recent N years of re
 // ---------- plant constants ----------
 const HFG=2257, TON_KW=3.51685, GAL_L=3.785411784;
 const FOG_C=30, FOG_RATE=2.5, TWR_RATE=2.9;   // adiabatic trigger °C; gal per ton-hour rejected
-const AUX_DRY=0.010;      // dry-cooler fans, fraction of rejected heat Q
+// Dry-cooler fan power is NOT carried as a separate ancillary: the YVFA0309's datasheet kW
+// already includes its own condenser fans, so a flat per-hour fan adder double-counted air movement.
 const PUMP_PRI=0.010;     // primary FWS-loop circulation pumps, fraction of Q
 const PUMP_CDU=0.008;     // CDU / secondary-loop pumps, fraction of IT — constant
 const COND_APPR=12, EVAP_APPR=5;
@@ -1175,7 +1181,7 @@ function copAt(o,FWS,p,x,hd){
 //  which is a materially better place on the part-load curve than 100%, and this tool
 //  prices every hour from there instead of pretending the machines are pinned.
 const PLANT_RATIO=1.2;
-const VER='65';                                           // build — stamped on the masthead and inside every run code
+const VER='67';                                           // build — stamped on the masthead and inside every run code
 const DES_BAND=3;                                         // K — how close to the day's hottest hour still counts as a sizing hour                                    // kWth of chiller installed per kW of IT
 let PLANT_TH=0;                                           // kWth installed \u2014 set once per run
 function plantTh(p,N){ return p.IT_kW>1e-9?PLANT_RATIO*p.IT_kW:0; }
@@ -1206,7 +1212,7 @@ function waterLitres(o,FWS,p,fChillOverride){
 
 // ---------- UI state ----------
 const S={units:'metric',theme:'light'};
-const W={hub:'nova',IT:100,hc:0.95,cascade:1,hall:'liquid',RS:30,RSmax:35,FWS:26,FWShi:26,cduap:4,oh:0.10,N:20,mult:1,hdr:0};
+const W={hub:'nova',IT:100,hc:1.0,cascade:1,hall:'liquid',RS:30,RSmax:35,FWS:26,FWShi:26,cduap:4,oh:0.10,N:20,mult:1,hdr:0};
 function P(){return {IT_kW:W.IT*1000, hc:W.hc, FWS:W.FWS, FWShi:Math.max(W.FWShi,W.FWS),
   cduap:W.cduap, cascade:W.cascade, oh:W.oh, hdr:W.hdr||0};}
 // TWO WORLDS, ONE PLANT. The "before" case runs at the supply temperature the site holds today.
@@ -1239,9 +1245,9 @@ const thStr =kw=>kw>=1000?(kw/1000).toFixed(2)+' MWth':fmtInt(kw)+' kWth';
 function runAnnual(p,hd){
   const yr=typicalYear(W.hub), hrs=yr.hrs, Q=p.IT_kW*p.hc;
   const itMW=p.IT_kW/1000, ohMW=p.oh*itMW;
-  const cduMW=p.IT_kW*PUMP_CDU/1000, priMW=Q*PUMP_PRI/1000, dfanMW=Q*AUX_DRY/1000;
-  const it=[],anc=[],cdu=[],pri=[],dryF=[],twr=[],chl=[],wat=[],fac=[],mech=[],amb=[],wb=[];
-  let eChl=0,eTwr=0,eDry=0,water=0,pkFac=0,pkIdx=0,facE=0;
+  const cduMW=p.IT_kW*PUMP_CDU/1000, priMW=Q*PUMP_PRI/1000;
+  const it=[],anc=[],cdu=[],pri=[],twr=[],chl=[],wat=[],fac=[],mech=[],amb=[],wb=[];
+  let eChl=0,eTwr=0,water=0,pkFac=0,pkIdx=0,facE=0;
   const mWater=new Array(12).fill(0);
   let hDry=0,hWet=0,hChl=0;
   for(let i=0;i<hrs.length;i++){
@@ -1251,17 +1257,17 @@ function runAnnual(p,hd){
     const extra=Q*(p.cascade===3?0.025:0.010)*Math.min(1,s.fWet+s.fChill)/1000;
     const tw=p.cascade===3?extra:0, ch=comp+(p.cascade===3?0:extra);
     const w=waterLitres(o,p.FWS,p);
-    it.push(itMW); anc.push(ohMW); cdu.push(cduMW); pri.push(priMW); dryF.push(dfanMW);
+    it.push(itMW); anc.push(ohMW); cdu.push(cduMW); pri.push(priMW);
     twr.push(tw); chl.push(ch); wat.push(w); mech.push(comp); amb.push(o.T); wb.push(o.WB);
-    const f=itMW+ohMW+cduMW+priMW+dfanMW+tw+ch;
+    const f=itMW+ohMW+cduMW+priMW+tw+ch;
     fac.push(f); facE+=f;
     if(f>pkFac){pkFac=f;pkIdx=i;}
-    eChl+=ch; eTwr+=tw; eDry+=dfanMW; water+=w; mWater[o.m]+=w;
+    eChl+=ch; eTwr+=tw; water+=w; mWater[o.m]+=w;
     if(s.fChill>1e-6) hChl++; else if(s.fWet>1e-6) hWet++; else hDry++;
   }
   const itE=itMW*8760;
-  return {it,anc,cdu,pri,dryF,twr,chl,wat,fac,mech,amb,wb,
-    eChl,eTwr,eDry,water,mWater,pkFac,pkIdx,hDry,hWet,hChl,
+  return {it,anc,cdu,pri,twr,chl,wat,fac,mech,amb,wb,
+    eChl,eTwr,water,mWater,pkFac,pkIdx,hDry,hWet,hChl,
     itE,ancE:ohMW*8760,cduE:cduMW*8760,priE:priMW*8760,facE,
     pue:facE/itE, pkPue:pkFac/itMW, WUE:water/(itMW*8760*1000), itMW, ohMW,
     peakHour:hrs[pkIdx], peakIdx:pkIdx, yrCal:yr.yearCal};
@@ -1269,17 +1275,17 @@ function runAnnual(p,hd){
 // design-day (N-year) hourly baseline
 function runDesignDay(p,N){
   const dn=designN(W.hub,N), Q=p.IT_kW*p.hc, itMW=p.IT_kW/1000, ohMW=p.oh*itMW;
-  const cduMW=p.IT_kW*PUMP_CDU/1000, priMW=Q*PUMP_PRI/1000, dfanMW=Q*AUX_DRY/1000;
+  const cduMW=p.IT_kW*PUMP_CDU/1000, priMW=Q*PUMP_PRI/1000;
   const fac=[],mech=[],cool=[],wat=[],db=[],wb=[],labels=[];
   dn.designDay.forEach(o=>{
     const s=split(o,p.FWS,p);
     const comp=mechEl(o,p.FWS,p,Q*s.fChill,true)/1000;
     const extra=Q*(p.cascade===3?0.025:0.010)*Math.min(1,s.fWet+s.fChill)/1000;
-    fac.push(itMW+ohMW+cduMW+priMW+dfanMW+extra+comp);
+    fac.push(itMW+ohMW+cduMW+priMW+extra+comp);
     // EVERYTHING THE COOLING PLANT DRAWS, not just the compressor. The chart stacks this on the base,
     // which is why it lands exactly on the facility demand line: IT + ancillary + all cooling IS the
     // facility. The compressor is kept separately because it is the piece that sizes the chillers.
-    cool.push(cduMW+priMW+dfanMW+extra+comp);
+    cool.push(cduMW+priMW+extra+comp);
     mech.push(comp); wat.push(waterLitres(o,p.FWS,p));
     db.push(o.T); wb.push(o.WB); labels.push(String(o.hh).padStart(2,'0')+':00');
   });
@@ -1328,7 +1334,7 @@ function facBaseline(o,p){
   const Q=p.IT_kW*p.hc, itMW=p.IT_kW/1000;
   const s=split(o,p.FWS,p), th=Q*s.fChill, comp=mechEl(o,p.FWS,p,th)/1000;
   const extra=Q*(p.cascade===3?0.025:0.010)*Math.min(1,s.fWet+s.fChill)/1000;
-  const fix=itMW+p.oh*itMW+p.IT_kW*PUMP_CDU/1000+Q*PUMP_PRI/1000+Q*AUX_DRY/1000+extra;
+  const fix=itMW+p.oh*itMW+p.IT_kW*PUMP_CDU/1000+Q*PUMP_PRI/1000+extra;
   return {fac:fix+comp, mech:comp, th, fix};
 }
 // Pick ONE flat FACILITY level F per day. In the charge window, charging fills the valleys up to F
@@ -1715,9 +1721,9 @@ function runStorage(p,base,N){
 // design day with IceBrick — extended window from 19:00 the evening before
 function runDesignDayIce(p,N,st){
   const dn=designN(W.hub,N), Q=p.IT_kW*p.hc, itMW=p.IT_kW/1000, ohMW=p.oh*itMW;
-  const cduMW=p.IT_kW*PUMP_CDU/1000, priMW=Q*PUMP_PRI/1000, dfanMW=Q*AUX_DRY/1000;
+  const cduMW=p.IT_kW*PUMP_CDU/1000, priMW=Q*PUMP_PRI/1000;
   const ext=dn.dayExt;
-  const pH=pHi(p), fix=itMW+ohMW+cduMW+priMW+dfanMW;
+  const pH=pHi(p), fix=itMW+ohMW+cduMW+priMW;
   // ON A CARRIED SCHEDULE THE DESIGN DAY DOES NOT PAY ITS OWN WAY. Its night is the hottest of the
   // year and cannot bank much under the ceiling, so it fills what it can and takes the rest out of ice
   // put down on earlier, milder nights. That gap is the whole argument for a tank bigger than one night,
@@ -2233,7 +2239,8 @@ function recap(){
   const h=HUBS[W.hub], c=CASCADES[W.cascade];
   $('w_recap').innerHTML=`<span><b>${h.name}</b></span><span><b>${W.IT} MW</b> IT</span>`+
     `<span><b>${c.name}</b></span><span>${W.hall==='air'?'hall':'racks'} <b>${tA1(W.RS)}</b>`+
-    (rsHi()-W.RS>=0.01?` \u2192 <b>${tA1(rsHi())}</b>`:'')+` \u00b7 FWS <b>${tA1(W.FWS)}</b></span>`;
+    (rsHi()-W.RS>=0.01?` \u2192 <b>${tA1(rsHi())}</b>`:'')+` \u00b7 FWS <b>${tA1(W.FWS)}</b></span>`+
+    (W.hdr>0?`<span>heat dome <b>+${tD1(W.hdr)}</b></span>`:'');
   if($('recapbox'))$('recapbox').innerHTML=[
     ['Location',`${h.name} — ${h.sub}`,h.clim],
     ['IT nameplate',`${W.IT} MW`,`${Math.round(W.hc*100)}% of it captured to the water loop = ${rtStr(W.IT*1000*W.hc)} of loop heat`],
@@ -2250,6 +2257,12 @@ function recap(){
         : `${tD1(rsHi()-W.RS)} warmer${W.hall==='air'?'':' at the rack'}, a ${tA1(W.FWShi)} facility loop, held to zero `+
           `deviation every hour by Spike Shield (DCIM-driven, SLA-backed) \u2014 the entire with-IceBrick case runs here`],
     ['Ancillary (non-cooling)',(W.oh*100).toFixed(1).replace(/\.0$/,'')+'% of IT',`a hard floor of ${(1+W.oh).toFixed(2)} on your PUE before any cooling energy at all`],
+    ['Heat dome recirculation',W.hdr>0?'+'+tD1(W.hdr):'none',
+      W.hdr>0
+        ? `added to the condenser air of the avoided chillers in every hour above 90 \u00b0F (32.2 \u00b0C) \u2014 the 2nd\u20135th `+
+          `day of a heat wave, when discharge air recirculates over the intakes. The surviving with-IceBrick fleet is exempt: `+
+          `shedding >30% of plant load collapses the recirculation cell`
+        : `no recirculation penalty modelled \u2014 the condensers see the weather station's ambient in every hour`],
     ['Chiller modelled',CHILLER.model,`349.0 ton.R @ 107 °F · 435.3 kW · EER 9.621 · IPLV.IP 17.37 · R-134a — `+
       `this datasheet drives every compressor hour below`]
   ].map(r=>`<div style="display:flex;gap:14px;padding:9px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
@@ -2391,8 +2404,7 @@ function yearSeries(){
   const st=[['IT load',b.it,c.it],
             ['Ancillary (non-cooling)',b.anc,c.anc],
             ['CDU / secondary pumps',b.cdu,c.cdu],
-            ['Primary loop pumps',b.pri,c.pri],
-            ['Dry-cooler fans',b.dryF,c.dry]];
+            ['Primary loop pumps',b.pri,c.pri]];
   if(p.cascade===3) st.push(['Cooling towers',b.twr,c.twr]);
   st.push([p.cascade===1?'Air-cooled chillers':p.cascade===2?'Adiabatic chillers':'Chillers',b.chl,c.chiller]);
   return st;
@@ -2431,7 +2443,7 @@ function drawYear(){
   const f=fmtInt;
   $('y_tag').textContent=`${HUBS[W.hub].name} · ${CASCADES[W.cascade].name} · FWS ${tA1(W.FWS)} · typical year`;
   $('y_tot').innerHTML=`<b>Annual:</b> IT ${f(b.itE)} MWh · ancillary ${f(b.ancE)} MWh · CDU pumps ${f(b.cduE)} MWh · `+
-    `primary pumps ${f(b.priE)} MWh · dry-cooler fans ${f(b.eDry)} MWh`+
+    `primary pumps ${f(b.priE)} MWh`+
     (W.cascade===3?` · cooling towers ${f(b.eTwr)} MWh`:'')+
     ` · chillers ${f(b.eChl)} MWh · <b>total ${f(b.facE)} MWh</b> · water ${f(wConv(b.water))} ${wUnit()}<br>`+
     `<b>Hours by mode:</b> ${f(b.hDry)} h fully dry · ${f(b.hWet)} h ${W.cascade===1?'dry-only (no evaporative stage on this cascade)':'evaporative, no compressor'} · ${f(b.hChl)} h with the compressor running.`;
@@ -2511,7 +2523,7 @@ function paintDay(){
     `air-cooled chillers installed at ${CHILLER.tons.toFixed(1)} ton.R each — ${PLANT_RATIO.toFixed(1)} kWth per kW of IT, the way plants are actually specified — `+
     `so even on the worst hour of the year they are running at <b>${Math.round(100*d.chillPk/(PLANT_TH||1))}% of nameplate</b>, not pinned. `+
     `Stack the whole cooling plant on the IT + ancillary base and it lands exactly on the facility line: at the peak hour <b>${d.mech[d.fac.indexOf(d.pkMW)].toFixed(2)} MW</b> of it is compressor and `+
-    `<b>${(d.cool[d.fac.indexOf(d.pkMW)]-d.mech[d.fac.indexOf(d.pkMW)]).toFixed(2)} MW</b> is CDU pumps, primary pumps and dry-cooler fans. `+
+    `<b>${(d.cool[d.fac.indexOf(d.pkMW)]-d.mech[d.fac.indexOf(d.pkMW)]).toFixed(2)} MW</b> is CDU pumps and primary pumps \u2014 the chiller's own condenser fans are already inside its datasheet kW. `+
     `Every piece of plant on this site is bought, installed, maintained and `+
     `financed for that one hour. It happens once. The other 8,759 hours pay for it.`;
 }
@@ -2524,7 +2536,7 @@ function drawDay(){
   // so the shape you are reading is the part that actually varies. Cooling is drawn from that
   // same base for the same reason; its tooltip still reports true MW.
   // THE COOLING CURVE SITS ON THE FACILITY CURVE, EXACTLY, AND THAT IS THE POINT. What is stacked here
-  // is the whole cooling plant - compressors plus CDU pumps, primary pumps and dry-cooler fans - so
+  // is the whole cooling plant - compressors plus CDU pumps and primary pumps - so
   // base + cooling = facility demand by construction and the two lines coincide at every hour. Stacking
   // the compressor alone used to leave a gap of roughly a megawatt that looked like an error and was in
   // fact the pumps and the fans. There is nothing in this facility that is not on one of these lines.
@@ -2878,6 +2890,7 @@ function paintRetire(di,st){
     ['\u2014 usable as new IT (\u00f7 peak PUE '+st.pkPue.toFixed(3)+')','+'+unlock.toFixed(2)+' MW'],
     ['\u2014 its own ancillary + cooling',oh.toFixed(2)+' MW'],
     ['Chiller modelled throughout',CHILLER.model],
+    ['Heat dome recirculation',W.hdr>0?'+'+tD1(W.hdr)+' above 90 \u00b0F \u00b7 avoided chillers only':'none modelled'],
     ['Chiller plant installed',PLANT_RATIO.toFixed(1)+' kWth per kW IT \u00b7 '+
       (PLANT_TH/CHILLER.kWth).toFixed(1)+' × '+CHILLER.tons.toFixed(1)+' ton.R'],
     ['Plant loading at the design-day peak',Math.round(100*R.dd.chillPk/(PLANT_TH||1))+'% of nameplate \u2192 '+
@@ -3328,6 +3341,7 @@ async function buildPDF(){
     // A report that quotes the caption while the numbers came from W is a report
     // that lies quietly, which is the worst kind.
     it:W.IT+' MW', hc:Math.round(W.hc*100)+'%',
+    hdrK:W.hdr||0, hdrTxt:(W.hdr>0?'+'+tD1(W.hdr)+' above 90 \u00b0F \u00b7 avoided chillers only':'none'),
     fws:tA1(W.FWS), fwshi:tA1(Math.max(W.FWShi,W.FWS)),
     fwsUp:Math.max(W.FWShi,W.FWS)-W.FWS,
     cdu:tD1(W.cduap), oh:Math.round(W.oh*1000)/10+'%',
@@ -3545,7 +3559,7 @@ async function buildPDF(){
   doc.setFontSize(10); doc.setTextColor(150,170,185);
   T([D.it+' IT  ·  '+D.casc,
             'FWS '+D.fws+(D.fwsUp>=0.01?'  →  '+D.fwshi+'  (Spike Shield)':'  (unchanged)'),
-            'CDU approach '+D.cdu+'  ·  ancillary '+D.oh+'  ·  load '+D.hc,
+            'CDU approach '+D.cdu+'  ·  ancillary '+D.oh+'  ·  load '+D.hc+(D.hdrK>0?'  ·  heat dome +'+tD1(D.hdrK):''),
             'Chiller modelled: YORK YVFA0309EVK46AAVBXO',
             'Generated '+new Date().toLocaleString()],M,_cy);
   doc.setFontSize(8.4); doc.setTextColor(110,130,145);
@@ -3568,6 +3582,7 @@ async function buildPDF(){
       D.fwsUp<0.01?D.fws+' (unchanged)':D.fwshi],
     ['CDU approach',D.cdu],
     ['Ancillary (non-cooling) overhead',D.oh],
+    ['Heat dome recirculation',D.hdrTxt],
     ['Design-day return period',D.nTag],
     ['Chiller modelled',D.chl]
   ]);
@@ -3671,8 +3686,8 @@ async function buildPDF(){
        'typical year used for the annual figures is the median-peak year of the most recent twenty.');
   para('Cascade. Each hour is walked through the selected cooling cascade stage by stage. Every stage sheds part of '+
        'the available temperature difference, and what is left is what the compressor has to lift. Circulation '+
-       'pumps, CDU secondary pumps, dry-cooler fans and — on the open circuit — cooling towers each carry their own '+
-       'electric, and all of it is inside the reported PUE.');
+       'pumps and CDU secondary pumps carry their own electric; the chiller\u2019s condenser fans are inside its '+
+       'datasheet kW, and on the open circuit the cooling towers carry theirs. All of it is inside the reported PUE.');
   para('Part load. The plant is modelled as one plant: all installed units online, unloading together. That is the '+
        'honest reading of a modern VSD screw estate and it is what the part-load curve in the datasheet describes. '+
        'The one documented exception is the ice circuit, which is treated as a designated set of machines on their '+
